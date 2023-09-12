@@ -12,6 +12,15 @@ from tool import label_util as util
 from comprehensive_evaluation.analyzer import *
 from comprehensive_evaluation.util import *
 from comprehensive_evaluation.slice_model import *
+import bisect
+
+
+def find_previous_element(sorted_list, value):
+    index = bisect.bisect_left(sorted_list, value)
+    if index == 0:
+        return None  # 给定值小于列表中的所有元素
+    else:
+        return sorted_list[index - 1]
 
 
 class Analyzer:
@@ -66,11 +75,17 @@ class Analyzer:
                 for i in range(level_number):
                     assert (
                         list_order[i]["price"]
-                        == current_market_information["bid{}_price".format(i+1)].values[0]  #？？？？？？？？？bid0_price  format(i)
+                        == current_market_information[
+                            "bid{}_price".format(i + 1)
+                        ].values[
+                            0
+                        ]  # ？？？？？？？？？bid0_price  format(i)
                     )
                     assert (
                         list_order[i]["amount"]
-                        <= current_market_information["bid{}_size".format(i+1)].values[0]
+                        <= current_market_information[
+                            "bid{}_size".format(i + 1)
+                        ].values[0]
                     )
         # check the trace of the position in the trading process is legal or not. it always should be 0 at the start and end of the trading process
         if self.strategy[-1]["position"] != 0:
@@ -190,11 +205,11 @@ class Analyzer:
             # 计算每次交易的收益率和持仓时间
             return_rate = final_cash / require_money
             total_return_rate += return_rate
-            
+
             if return_rate > 0:
-                count_pos_return_rate += 1 
+                count_pos_return_rate += 1
                 total_duration += close_time - open_time
-                            
+
             total_duration += close_time - open_time
             # TODO 根据bid1 price进行结算，每次持仓过程中的maxdrawdown
             position_record = []
@@ -216,8 +231,10 @@ class Analyzer:
                 time_point = [
                     timestamp
                     for timestamp in self.market_information["timestamp"].unique()
-                    if (timestamp >= timestamp_record[i]
-                    and timestamp < timestamp_record[i + 1])
+                    if (
+                        timestamp >= timestamp_record[i]
+                        and timestamp < timestamp_record[i + 1]
+                    )
                 ]
                 cash_accmulative_record.append(cash_record[i] + require_money)
                 for j in range(len(time_point)):
@@ -225,8 +242,9 @@ class Analyzer:
                 for k in range(len(time_point)):
                     cash_accmulative_record.append(cash_accmulative_record[-1])
             trade_position_record.append(0)
-            cash_accmulative_record.append(cash_record[i+1] + require_money)
-            
+            cash_accmulative_record.append(cash_record[i + 1] + require_money)
+            # print("cash_accmulative_record", cash_accmulative_record)
+
             # trade_position_record.append(0)
             corresponding_market_information = self.market_information[
                 self.market_information["timestamp"].isin(
@@ -273,12 +291,15 @@ class Analyzer:
 
     def calculate_metric(self, selected_timestamp: list):
         # selected trade is part of the strategy that we want to calculate the metric,
-        # its position but do not have to end or start with 0
+        # its position do not have to end or start with 0
         # selected_timestamp is a 2-element list indicating the start and end of the timestamp
         selected_timestamp.sort()
         assert len(selected_timestamp) == 2
         selected_market = self.market_information[
-            (self.market_information["timestamp"] >= selected_timestamp[0])
+            (
+                self.market_information["timestamp"]
+                >=selected_timestamp[0]
+            )
             & (self.market_information["timestamp"] <= selected_timestamp[1])
         ]
         selected_strategy = [
@@ -293,7 +314,13 @@ class Analyzer:
 
         initial_posotion = selected_strategy[0]["position"] + first_trade_size
         assert initial_posotion >= 0
-        cash_flow = []
+        # 默认第一步自动补仓 用bid1买的 看啥情况
+        cash_flow = [
+            -initial_posotion
+            * self.market_information[
+                self.market_information["timestamp"] == selected_timestamp[0]
+            ]["bid1_price"].values[0]
+        ]
         for stack_order in selected_strategy:
             total_value = 0
             for order in stack_order["order"]:
@@ -301,26 +328,28 @@ class Analyzer:
                 if stack_order["action"] == "buy":
                     total_value = -total_value
                 cash_flow.append(total_value)
-        initial_require_money = (
-            initial_posotion * selected_market["bid1_price"].values[0]
-        )
+
         cash_record = [sum(cash_flow[: i + 1]) for i in range(len(cash_flow))]
-        require_money = initial_require_money - min(0, min(cash_record))
+        # print("cash_record", cash_record)
+        # cash record 总计来讲现金流的list
+        require_money = -min(cash_record)
+        # 最小的现金流 （最缺钱的 就是require money）
         position = initial_posotion
         position_market_record = []
         cash_market_record = []
         for timestamp in selected_market.timestamp.unique():
-            matching_strategy = next(
-                (item for item in selected_strategy if item["timestamp"] == timestamp),
-                None,
-            )
+            matching_strategy = None
+            for item in selected_strategy:
+                if item["timestamp"] == timestamp:
+                    matching_strategy = item
+                    break
             if matching_strategy:
                 current_position = matching_strategy["position"]
                 position = current_position
             else:
                 current_position = position
             position_market_record.append(current_position)
-        inital_cash = require_money - initial_require_money
+        inital_cash = require_money - cash_flow[0]
         cash = inital_cash
         for timestamp in selected_market.timestamp.unique():
             matching_strategy = next(
@@ -331,13 +360,18 @@ class Analyzer:
                 total_value = 0
                 for order in matching_strategy["order"]:
                     total_value += order["price"] * order["amount"]
-                    if stack_order["action"] == "buy":
-                        total_value = -total_value
+                if matching_strategy["action"] == "buy":
+                    total_value = -total_value
                 current_cash = cash + total_value
                 cash = current_cash
+                # print('total_value',total_value)
             else:
                 current_cash = cash
+            # print("current_cash", current_cash)
             cash_market_record.append(current_cash)
+        assert len(position_market_record) == len(cash_market_record)
+        # print(len(selected_market))
+        # print(len(position_market_record))
         assert len(position_market_record) == len(selected_market)
         selected_market_price = selected_market["bid1_price"].values
         position_value_record = [
@@ -346,10 +380,13 @@ class Analyzer:
                 position_market_record, selected_market_price
             )
         ]
+        # print("require_money", require_money)
+
         total_value_record = [
             cash + position_value
             for cash, position_value in zip(cash_market_record, position_value_record)
         ]
+        # print("cash", cash_market_record)
         tr = total_value_record[-1] / total_value_record[0] - 1
         mdd = 0
         peak = total_value_record[0]
@@ -382,33 +419,68 @@ class Analyzer:
         print(len(opening_strategy_timestamp_list))
 
         assert len(opening_strategy_timestamp_list) >= num_seg
+        assert num_seg > 0
         num_trade_seg = int(len(opening_strategy_timestamp_list) / num_seg)
-        for i in range(num_seg):
-            if i != num_seg - 1:
-                selected_timestamp = [
-                    opening_strategy_timestamp_list[num_trade_seg * i],
-                    closing_strategy_timestamp_list[num_trade_seg * (i + 1)],
-                ]
-                tr, mdd, cr = self.calculate_metric(selected_timestamp)
-
-                print(
-                    "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
-                        i, tr, mdd, cr
-                    )
+        market_timestamp_list = self.market_information.timestamp.unique().tolist()
+        if num_seg == 1:
+            selected_timestamp = [
+                market_timestamp_list[0],
+                market_timestamp_list[-1],
+            ]
+            tr, mdd, cr = self.calculate_metric(selected_timestamp)
+            print(
+                "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
+                    0, tr, mdd, cr
                 )
+            )
+        else:
+            for i in range(num_seg):
+                if i == 0:
+                    # 从这个一个segement的trade的结束下一步到这个segement的平仓算完
+                    selected_timestamp = [
+                        market_timestamp_list[0],
+                        find_previous_element(
+                            market_timestamp_list,
+                            opening_strategy_timestamp_list[num_trade_seg * (i + 1)],
+                        ),
+                    ]
+                    tr, mdd, cr = self.calculate_metric(selected_timestamp)
 
-            else:
-                selected_timestamp = [
-                    opening_strategy_timestamp_list[num_trade_seg * i],
-                    closing_strategy_timestamp_list[-1],
-                ]
-
-                tr, mdd, cr = self.calculate_metric(selected_timestamp)
-                print(
-                    "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
-                        i, tr, mdd, cr
+                    print(
+                        "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
+                            i, tr, mdd, cr
+                        )
                     )
-                )
+                else:
+                    if i != num_seg - 1:
+                        selected_timestamp = [
+                            opening_strategy_timestamp_list[num_trade_seg * i],
+                            find_previous_element(
+                                market_timestamp_list,
+                                opening_strategy_timestamp_list[
+                                    num_trade_seg * (i + 1)
+                                ],
+                            ),
+                        ]
+
+                        tr, mdd, cr = self.calculate_metric(selected_timestamp)
+                        print(
+                            "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
+                                i, tr, mdd, cr
+                            )
+                        )
+                    else:
+                        selected_timestamp = [
+                            opening_strategy_timestamp_list[num_trade_seg * i],
+                            market_timestamp_list[-1],
+                        ]
+
+                        tr, mdd, cr = self.calculate_metric(selected_timestamp)
+                        print(
+                            "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
+                                i, tr, mdd, cr
+                            )
+                        )
 
     def analysis_along_dynamics(self, num_dynamics, path, elected_timestamp: list):
         # TODO 给定段时间，先把这段时间内的市场状态划分成num_dynamics个市场状态，找到这段时间对应的策略（通过comprehensive_evaluation/slice_model.py，
@@ -424,12 +496,12 @@ class Analyzer:
         # model = Linear_Market_Dynamics_Model(
         #     data=selected_market.reset_index(), dynamic_number=num_dynamics
         # )
-        
+
         # model.run(path)
 
         # df_label = pd.read_feather(path + "/df_label.feather")
         # assert len(selected_market) == len(df_label)
-        
+
         # opening_strategy_timestamp_list = []
         # closing_strategy_timestamp_list = []
         # opening_count = [0]*5
@@ -442,14 +514,14 @@ class Analyzer:
         #         order_size = 0
         #         for order in stack_order["order"]:
         #             order_size += order["amount"]
-        #         if order_size == stack_order["position"]: 
+        #         if order_size == stack_order["position"]:
         #             print(stack_order["timestamp"])
-        #             opening_strategy_timestamp_list.append(stack_order["timestamp"]) 
+        #             opening_strategy_timestamp_list.append(stack_order["timestamp"])
         #             opening_data = data[data['timestamp'] == stack_order['timestamp']]
         #             label_index = df_label[df_label['timestamp'] == stack_order['timestamp']]['label'].values[0]    # 获取label
         #             opening_count[label_index] += 1         # 记录对应label的开仓次数
         #             opening_amount[label_index] +=  sum( level['amount'] for level in stack_order['order']) # 记录开仓总量至对应label
-                    
+
         #     elif stack_order["action"] == "sell":
         #         if stack_order["position"] == 0:
         #             print(stack_order["timestamp"])
@@ -462,31 +534,32 @@ class Analyzer:
         # print("opening_count", opening_count)
         # print("closing_count",closing_count)
         # print("opening_amount",opening_amount)
-        # print("closing_amount",closing_amount)        
+        # print("closing_amount",closing_amount)
 
-        # opening_count_perc = [ x/sum(opening_count) for x in opening_count]         
-        # closing_count_perc = [ x/sum(closing_count) for x in closing_count]   
-        # opening_amount_perc = [ x/sum(opening_amount) for x in opening_amount]   
-        # closing_amount_perc = [ x/sum(closing_amount) for x in closing_amount]   
+        # opening_count_perc = [ x/sum(opening_count) for x in opening_count]
+        # closing_count_perc = [ x/sum(closing_count) for x in closing_count]
+        # opening_amount_perc = [ x/sum(opening_amount) for x in opening_amount]
+        # closing_amount_perc = [ x/sum(closing_amount) for x in closing_amount]
 
-        # print("opening_count_perc",opening_count_perc) 
-        # print("closing_count_perc",closing_count_perc) 
-        # print("opening_amount_perc",opening_amount_perc) 
-        # print("closing_amount_perc",closing_amount_perc) 
+        # print("opening_count_perc",opening_count_perc)
+        # print("closing_count_perc",closing_count_perc)
+        # print("opening_amount_perc",opening_amount_perc)
+        # print("closing_amount_perc",closing_amount_perc)
 
         # return opening_count, closing_count, opening_amount, closing_amount
-        
-        
-    def analysis_along_time_dynamics(self, path, num_dynamics, num_seg, selected_timestamp: list):
-    # TODO 给定段时间，先把这段时间内的市场状态划分成num_dynamics个市场状态
-    # TODO 根据策略 用开平仓的次数来划分时间（总开平仓次数）
-    # TODO 两维度从时间和市场状态 计算胜率，收益率，持仓时间，最大回撤，calmar ratio，已经开仓量和平仓量占总开仓量和平仓量的百分比
+
+    def analysis_along_time_dynamics(
+        self, path, num_dynamics, num_seg, selected_timestamp: list
+    ):
+        # TODO 给定段时间，先把这段时间内的市场状态划分成num_dynamics个市场状态
+        # TODO 根据策略 用开平仓的次数来划分时间（总开平仓次数）
+        # TODO 两维度从时间和市场状态 计算胜率，收益率，持仓时间，最大回撤，calmar ratio，已经开仓量和平仓量占总开仓量和平仓量的百分比
 
         selected_market = data[
             (data["timestamp"] >= selected_timestamp[0])
             & (data["timestamp"] <= selected_timestamp[1])
         ]
-        
+
         model = Linear_Market_Dynamics_Model(
             data=selected_market.reset_index(), dynamic_number=num_dynamics
         )
@@ -512,22 +585,20 @@ class Analyzer:
             elif stack_order["action"] == "sell":
                 if stack_order["position"] == 0:
                     closing_strategy_timestamp_list.append(stack_order["timestamp"])
-        assert len(opening_strategy_timestamp_list) == len(closing_strategy_timestamp_list)
+        assert len(opening_strategy_timestamp_list) == len(
+            closing_strategy_timestamp_list
+        )
         # print(len(opening_strategy_timestamp_list))
         assert len(opening_strategy_timestamp_list) >= num_seg
         num_trade_seg = int(len(opening_strategy_timestamp_list) / num_seg)
 
         def calculate(local_selected_timestamp):
-            tr, mdd, cr = self.calculate_metric(
-                local_selected_timestamp
-            )  
-            print()
+            tr, mdd, cr = self.calculate_metric(local_selected_timestamp)
             print(
                 "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
                     i, tr, mdd, cr
                 )
             )
-            print()
 
         def along_dynamics(local_selected_timestamp, index_seg):
             selected_market = data[
@@ -609,7 +680,9 @@ class Analyzer:
             if i == num_seg - 1:
                 close_market_time = closing_strategy_timestamp_list[-1]
             else:
-                close_market_time = closing_strategy_timestamp_list[num_trade_seg * (i + 1)]
+                close_market_time = closing_strategy_timestamp_list[
+                    num_trade_seg * (i + 1)
+                ]
 
             phase_selected_timestamp = [start_market_time, close_market_time]
             calculate(phase_selected_timestamp)
@@ -633,13 +706,13 @@ class Analyzer:
         ]
 
         color_list = ["#8ECFC9", "#FFBE7A", "#FA7F6F", "#BEB8DC", "#2878B5"]
-        x_label = ["phase1","phase2","phase3","phase4","phase5"]
+        x_label = ["phase1", "phase2", "phase3", "phase4", "phase5"]
         y_label = ["Bull", "Rally", "Sideways", "Pullback", "Bear"]
         y_label.reverse()
 
-        x_ax = np.array(range(len(x_label)))*4
+        x_ax = np.array(range(len(x_label))) * 4
 
-        fig = plt.figure(figsize=(24,24))
+        fig = plt.figure(figsize=(24, 24))
         # plt.suptitle('Opening/Closing counts/amounts along different time with diff market type')
 
         patches = [
@@ -649,13 +722,19 @@ class Analyzer:
 
         ax = plt.gca()
         box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width , box.height* 0.75])
-        fig.legend(handles=patches, loc='upper center', bbox_to_anchor=(0.5, 0.95), ncol=5, fontsize='large')
+        ax.set_position([box.x0, box.y0, box.width, box.height * 0.75])
+        fig.legend(
+            handles=patches,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.95),
+            ncol=5,
+            fontsize="large",
+        )
 
         plt.subplot(221)
-        plt.xlabel('Label')
-        plt.ylabel('Count')
-        plt.title('Opening count')
+        plt.xlabel("Label")
+        plt.ylabel("Count")
+        plt.title("Opening count")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -666,14 +745,20 @@ class Analyzer:
             )
         plt.xticks([i + 1 for i in x_ax], x_label, fontsize="x-large")
         for i in range(len(opening_count_seg)):
-            plotdata=[count[i] for count in opening_count_seg]
-            for x,y in enumerate(plotdata):
-                plt.text(x*4+i*0.75, y+0.1,  format(opening_count_perc[x][i]*100,'.0f') + "%",ha='center',fontsize=9)
+            plotdata = [count[i] for count in opening_count_seg]
+            for x, y in enumerate(plotdata):
+                plt.text(
+                    x * 4 + i * 0.75,
+                    y + 0.1,
+                    format(opening_count_perc[x][i] * 100, ".0f") + "%",
+                    ha="center",
+                    fontsize=9,
+                )
 
         plt.subplot(222)
-        plt.xlabel('Label')
-        plt.ylabel('Count')
-        plt.title('Closing count')
+        plt.xlabel("Label")
+        plt.ylabel("Count")
+        plt.title("Closing count")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -684,14 +769,20 @@ class Analyzer:
             )
         plt.xticks([i + 1.5 for i in x_ax], x_label, fontsize="x-large")
         for i in range(len(closing_count_seg)):
-            plotdata=[count[i] for count in closing_count_seg]
-            for x,y in enumerate(plotdata):
-                plt.text(x*4+i*0.75, y+0.1, format(closing_count_perc[x][i]*100,'.0f') + "%",ha='center',fontsize=9)
-                
+            plotdata = [count[i] for count in closing_count_seg]
+            for x, y in enumerate(plotdata):
+                plt.text(
+                    x * 4 + i * 0.75,
+                    y + 0.1,
+                    format(closing_count_perc[x][i] * 100, ".0f") + "%",
+                    ha="center",
+                    fontsize=9,
+                )
+
         plt.subplot(223)
-        plt.xlabel('Label')
-        plt.ylabel('Amount')
-        plt.title('Opening amount')
+        plt.xlabel("Label")
+        plt.ylabel("Amount")
+        plt.title("Opening amount")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -702,14 +793,20 @@ class Analyzer:
             )
         plt.xticks([i + 1.5 for i in x_ax], x_label, fontsize="x-large")
         for i in range(len(opening_amount_seg)):
-            plotdata=[count[i] for count in opening_amount_seg]
-            for x,y in enumerate(plotdata):
-                plt.text(x*4+i*0.75, y+0.1, format(opening_amount_perc[x][i]*100,'.0f') + "%",ha='center',fontsize=9)
-                
+            plotdata = [count[i] for count in opening_amount_seg]
+            for x, y in enumerate(plotdata):
+                plt.text(
+                    x * 4 + i * 0.75,
+                    y + 0.1,
+                    format(opening_amount_perc[x][i] * 100, ".0f") + "%",
+                    ha="center",
+                    fontsize=9,
+                )
+
         plt.subplot(224)
-        plt.xlabel('Label')
-        plt.ylabel('Amount')
-        plt.title('Closing amount')
+        plt.xlabel("Label")
+        plt.ylabel("Amount")
+        plt.title("Closing amount")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -720,56 +817,67 @@ class Analyzer:
             )
         plt.xticks([i + 1.5 for i in x_ax], x_label, fontsize="x-large")
         for i in range(len(closing_amount_seg)):
-            plotdata=[count[i] for count in closing_amount_seg]
-            for x,y in enumerate(plotdata):
-                plt.text(x*4+i*0.75, y+0.1, format(closing_amount_perc[x][i]*100,'.0f') + "%"  ,ha='center',fontsize=9)
+            plotdata = [count[i] for count in closing_amount_seg]
+            for x, y in enumerate(plotdata):
+                plt.text(
+                    x * 4 + i * 0.75,
+                    y + 0.1,
+                    format(closing_amount_perc[x][i] * 100, ".0f") + "%",
+                    ha="center",
+                    fontsize=9,
+                )
 
-        img_path = path + "/time_dynamics_proportion.pdf"        
-        plt.savefig(img_path,bbox_inches='tight')
+        img_path = path + "/time_dynamics_proportion.pdf"
+        plt.savefig(img_path, bbox_inches="tight")
         # plt.show()
 
-        return opening_count_seg, closing_count_seg, opening_amount_seg, closing_amount_seg
+        return (
+            opening_count_seg,
+            closing_count_seg,
+            opening_amount_seg,
+            closing_amount_seg,
+        )
 
 
 if __name__ == "__main__":
-    positions = np.load("data/micro_action.npy")
-    data = pd.read_feather("data/test.feather")
-    
+    positions = np.load("data/micro_action.npy")[:100000]
+    data = pd.read_feather("data/test.feather")[:100001]
+
     print("execution start")
-    
-    num_seg = 5     
+
+    num_seg = 5
     num_dynamics = 5
     path = "data/formal"
     selected_timestamp = [
         pd.Timestamp("2022-08-06 19:24:12"),
         pd.Timestamp("2022-08-15 23:59:59"),
     ]
-    
+
     print("flag 1")
-    
+
     strategy = transform_market_order_strategy(data, positions, max_holding_number=4000)
-    
+
     print("flag 2")
-    
+
     analyzer = Analyzer(data, strategy)
-    
+
     print("flag 3")
-    
-    time_analysis = analyzer.analysis_along_time(1)
+
+    time_analysis = analyzer.analysis_along_time(2)
 
     mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
         analyzer.strategy
     )  #    assert len(trade_position_record) == len(corresponding_market_information)   AssertionError
-    
-    print("flag 4")
-    
-    opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
-    
-    # print("mean_return_rate", mean_return_rate)
-    # print("mean_duration", mean_duration)
-    # print("mean_mdd", mean_mdd)
-    # print("win_rate", win_rate)
-    print("opening_count_seg", opening_count_seg)
-    print("closing_count_seg", closing_count_seg)
-    print("opening_amount_seg", opening_amount_seg)
-    print("closing_amount_seg", closing_amount_seg)
+
+    # print("flag 4")
+
+    # opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
+
+    # # print("mean_return_rate", mean_return_rate)
+    # # print("mean_duration", mean_duration)
+    # # print("mean_mdd", mean_mdd)
+    # # print("win_rate", win_rate)
+    # print("opening_count_seg", opening_count_seg)
+    # print("closing_count_seg", closing_count_seg)
+    # print("opening_amount_seg", opening_amount_seg)
+    # print("closing_amount_seg", closing_amount_seg)
