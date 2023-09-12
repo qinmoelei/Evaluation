@@ -174,10 +174,10 @@ class Analyzer:
                 ):
                     single_trade_strategy.append(selected_stack_order)
             cash_flow = []
-            print("single_trade_strategy", single_trade_strategy)
+            # print("single_trade_strategy", single_trade_strategy)
             # 计算每次交易的现金流的变化
             for stack_order in single_trade_strategy:
-                print("stack_order", stack_order)
+                # print("stack_order", stack_order)
                 total_value = 0
                 for order in stack_order["order"]:
                     total_value += order["price"] * order["amount"]
@@ -210,26 +210,34 @@ class Analyzer:
                 if timestamp >= open_time and timestamp <= close_time
             ]
             assert len(timestamp_record) == len(position_record)
+            assert len(timestamp_record) == len(cash_record)
 
-            assert len(timestamp_record) == len(timestamp_record)   #可删除
             for i in range(len(timestamp_record) - 1):
                 time_point = [
                     timestamp
                     for timestamp in self.market_information["timestamp"].unique()
-                    if timestamp >= timestamp_record[i]
-                    and timestamp <= timestamp_record[i + 1]
+                    if (timestamp >= timestamp_record[i]
+                    and timestamp < timestamp_record[i + 1])
                 ]
                 cash_accmulative_record.append(cash_record[i] + require_money)
                 for j in range(len(time_point)):
                     trade_position_record.append(position_record[i])
-                for k in range(len(time_point) - 1):
+                for k in range(len(time_point)):
                     cash_accmulative_record.append(cash_accmulative_record[-1])
+            trade_position_record.append(0)
+            cash_accmulative_record.append(cash_record[i+1] + require_money)
+            
             # trade_position_record.append(0)
             corresponding_market_information = self.market_information[
                 self.market_information["timestamp"].isin(
                     corresponding_market_timestamp
                 )
             ]
+            # print("trade_position_record_length", len(trade_position_record))
+            # print("corresponding_market_information_length", len(corresponding_market_information))
+            # if len(trade_position_record) != len(corresponding_market_information):
+            #     print("trade_position_record", trade_position_record)
+            #     print("corresponding_market_information", corresponding_market_information)
 
             assert len(trade_position_record) == len(corresponding_market_information)
 
@@ -749,9 +757,9 @@ if __name__ == "__main__":
     
     time_analysis = analyzer.analysis_along_time(1)
 
-    # mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
-    #     analyzer.strategy
-    # )  #    assert len(trade_position_record) == len(corresponding_market_information)   AssertionError
+    mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
+        analyzer.strategy
+    )  #    assert len(trade_position_record) == len(corresponding_market_information)   AssertionError
     
     print("flag 4")
     
