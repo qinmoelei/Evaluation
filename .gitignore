@@ -1,0 +1,7 @@
+*.log
+log/
+!.gitignore
+data
+data_test
+log
+
