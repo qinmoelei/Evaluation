@@ -24,11 +24,12 @@ def find_previous_element(sorted_list, value):
 
 
 class Analyzer:
-    def __init__(self, market_information, strategy):
+    def __init__(self, market_information, strategy,commission_rate=0.00015):
         # market information should be a data frame that consist of 21 columns(timedstamp &  5-level ask bid's price and size)
         # stategy: a list of dictionary consisting of 3 keys: timestamp, action (buy or sell) and dictionary indicating the level
         # price and amount of the conducted orders
         self.market_information = market_information
+        self.commission_rate=commission_rate
         self.strategy = strategy
         # order in strategy[{'timestamp':,'action':,'order':[{'price':,'amount':},{'price':,'amount':},...],'position':}]
         # the strategy should be a list of market order containing the executed price, amount the agent's position after conducting the trade
@@ -198,6 +199,9 @@ class Analyzer:
                     total_value += order["price"] * order["amount"]
                 if stack_order["action"] == "buy":
                     total_value = -total_value
+                    total_value=total_value*(1+self.commission_rate)
+                if stack_order["action"] == "sell":
+                    total_value=total_value*(1-self.commission_rate)
                 cash_flow.append(total_value)
             cash_record = [sum(cash_flow[: i + 1]) for i in range(len(cash_flow))]
             final_cash = cash_record[-1]
@@ -327,6 +331,10 @@ class Analyzer:
                 total_value += order["price"] * order["amount"]
                 if stack_order["action"] == "buy":
                     total_value = -total_value
+                    total_value=total_value*(1+self.commission_rate)
+                if stack_order["action"] == "sell":
+                    total_value=total_value*(1-self.commission_rate)
+                cash_flow.append(total_value)
                 cash_flow.append(total_value)
 
         cash_record = [sum(cash_flow[: i + 1]) for i in range(len(cash_flow))]
@@ -362,6 +370,10 @@ class Analyzer:
                     total_value += order["price"] * order["amount"]
                 if matching_strategy["action"] == "buy":
                     total_value = -total_value
+                    total_value=total_value*(1+self.commission_rate)
+                if matching_strategy["action"] == "sell":
+                    total_value=total_value*(1-self.commission_rate)
+                cash_flow.append(total_value)
                 current_cash = cash + total_value
                 cash = current_cash
                 # print('total_value',total_value)
@@ -840,8 +852,8 @@ class Analyzer:
 
 
 if __name__ == "__main__":
-    positions = np.load("data/micro_action.npy")[:100000]
-    data = pd.read_feather("data/test.feather")[:100001]
+    positions = np.load("data/micro_action.npy")
+    data = pd.read_feather("data/test.feather")
 
     print("execution start")
 
