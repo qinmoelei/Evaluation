@@ -5,6 +5,7 @@ import sys
 from datetime import timedelta
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import csv
 
 sys.path.append(".")
 from tool import market_dynamics_modeling_analysis
@@ -604,19 +605,45 @@ class Analyzer:
         assert len(opening_strategy_timestamp_list) >= num_seg
         num_trade_seg = int(len(opening_strategy_timestamp_list) / num_seg)
 
-        def calculate(local_selected_timestamp):
+        def calculate(local_selected_timestamp, path):
             tr, mdd, cr = self.calculate_metric(local_selected_timestamp)
+            
+            selected_strategy = [  # 进行交易的market time
+                item for item in strategy
+                if local_selected_timestamp[0]<= item["timestamp"]<= local_selected_timestamp[1]
+            ]
+            mean_return_rate, mean_duration, mean_mdd, win_rate = self.analysis_behavior(selected_strategy)
+                  
             print(
-                "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}".format(
-                    i, tr, mdd, cr
+                "in the {}th segment, the total return rate is {}, the max drawdown is {}, the calmar ratio is {}, the mean return rate, mean duration, mean max drawdown, win rate is as follow".format(
+                    i, tr, mdd, cr, mean_return_rate, mean_duration, mean_mdd, win_rate
                 )
             )
+            
+            metrics_path  = path + "/metrics_segment{}".format(i)
+            metrics_name = ['segmentId','total return rate','max drawdown','calmar ratio','mean return rate','mean duration','mean max drawdown','win rate']
+            metrics = [{
+                'segmentId': i,
+                'total return rate' : tr ,
+                'max drawdown' : mdd,
+                'calmar ratio' : cr,
+                'mean return rate' : mean_return_rate,
+                'mean duration' : mean_duration,
+                'mean max drawdown' : mean_mdd,
+                'win rate' : win_rate,
+            }]
+            
+            with open(metrics_path, 'w') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames = metrics_name)
+                writer.writeheader()
+                writer.writerows(metrics)
+            
 
         def along_dynamics(local_selected_timestamp, index_seg):
-            selected_market = data[
-                (data["timestamp"] >= local_selected_timestamp[0])
-                & (data["timestamp"] <= local_selected_timestamp[1])
-            ]
+            # selected_market = data[
+            #     (data["timestamp"] >= local_selected_timestamp[0])
+            #     & (data["timestamp"] <= local_selected_timestamp[1])
+            # ]
             selected_strategy = [  # 进行交易的market time
                 item
                 for item in strategy
@@ -697,7 +724,7 @@ class Analyzer:
                 ]
 
             phase_selected_timestamp = [start_market_time, close_market_time]
-            calculate(phase_selected_timestamp)
+            calculate(phase_selected_timestamp, path)
             along_dynamics(phase_selected_timestamp, i)
 
         opening_count_perc = [
@@ -738,14 +765,14 @@ class Analyzer:
         fig.legend(
             handles=patches,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.95),
+            bbox_to_anchor=(0.5, 0.93),
             ncol=5,
             fontsize="large",
         )
 
         plt.subplot(221)
-        plt.xlabel("Label")
-        plt.ylabel("Count")
+        plt.xlabel("Time", fontsize="xx-large")
+        plt.ylabel("Count", fontsize="xx-large")
         plt.title("Opening count")
         for i in range(5):
             plt.bar(
@@ -768,8 +795,8 @@ class Analyzer:
                 )
 
         plt.subplot(222)
-        plt.xlabel("Label")
-        plt.ylabel("Count")
+        plt.xlabel("Time", fontsize="xx-large")
+        plt.ylabel("Count", fontsize="xx-large")
         plt.title("Closing count")
         for i in range(5):
             plt.bar(
@@ -792,9 +819,9 @@ class Analyzer:
                 )
 
         plt.subplot(223)
-        plt.xlabel("Label")
-        plt.ylabel("Amount")
-        plt.title("Opening amount")
+        plt.xlabel("Time", fontsize="xx-large")
+        plt.ylabel("Volume", fontsize="xx-large")
+        plt.title("Opening volume")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -816,9 +843,9 @@ class Analyzer:
                 )
 
         plt.subplot(224)
-        plt.xlabel("Label")
-        plt.ylabel("Amount")
-        plt.title("Closing amount")
+        plt.xlabel("Time", fontsize="xx-large")
+        plt.ylabel("Volume", fontsize="xx-large")
+        plt.title("Closing volume")
         for i in range(5):
             plt.bar(
                 [m + i * 0.75 for m in x_ax],
@@ -852,38 +879,46 @@ class Analyzer:
 
 
 if __name__ == "__main__":
-    positions = np.load("data/micro_action.npy")
-    data = pd.read_feather("data/test.feather")
+    
+    
+    positions = np.load("best_result/BTCT/micro_action.npy")
+    data = pd.read_feather("best_result/BTCT/test.feather")   
+    path = "best_result/BTCT/data"   
+    isExist = os.path.exists(path)
+    if not isExist:
+        os.makedirs(path)
+        print("The new directory is created! {}".format(path))
 
-    print("execution start")
-
+    max_holding_number1=0.01
+    commission_fee=0
+    
     num_seg = 5
     num_dynamics = 5
-    path = "data/formal"
     selected_timestamp = [
-        pd.Timestamp("2022-08-06 19:24:12"),
-        pd.Timestamp("2022-08-15 23:59:59"),
+    pd.Timestamp(data[0:1]['timestamp'].values[0]),
+    pd.Timestamp(data.iloc[-1]['timestamp'])
     ]
+
 
     print("flag 1")
 
-    strategy = transform_market_order_strategy(data, positions, max_holding_number=4000)
+    strategy = transform_market_order_strategy(data, positions, max_holding_number=max_holding_number1)
 
     print("flag 2")
 
-    analyzer = Analyzer(data, strategy)
+    analyzer = Analyzer(data, strategy,commission_fee)
 
     print("flag 3")
 
-    time_analysis = analyzer.analysis_along_time(2)
+    # time_analysis = analyzer.analysis_along_time(2)
 
-    mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
-        analyzer.strategy
-    )  #    assert len(trade_position_record) == len(corresponding_market_information)   AssertionError
+    # mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
+    #     analyzer.strategy
+    # )  
 
     # print("flag 4")
 
-    # opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
+    opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
 
     # # print("mean_return_rate", mean_return_rate)
     # # print("mean_duration", mean_duration)
