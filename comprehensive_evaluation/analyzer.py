@@ -157,6 +157,7 @@ class Analyzer:
         # 现确定总共的开闭仓的次数 selected strategy 起码开头和结尾的position应该为0
         opening_strategy_timestamp_list = []
         closing_strategy_timestamp_list = []
+        #TODO 检查头一个策略是不是从0开仓 注意精度 （open sell）
 
         for stack_order in selected_strategy:
             if stack_order["action"] == "buy":
@@ -241,11 +242,11 @@ class Analyzer:
                         and timestamp < timestamp_record[i + 1]
                     )
                 ]
-                cash_accmulative_record.append(cash_record[i] + require_money)
+                # cash_accmulative_record.append(cash_record[i] + require_money)
                 for j in range(len(time_point)):
                     trade_position_record.append(position_record[i])
                 for k in range(len(time_point)):
-                    cash_accmulative_record.append(cash_accmulative_record[-1])
+                    cash_accmulative_record.append(cash_record[i] + require_money)
             trade_position_record.append(0)
             cash_accmulative_record.append(cash_record[i + 1] + require_money)
             # print("cash_accmulative_record", cash_accmulative_record)
@@ -263,6 +264,7 @@ class Analyzer:
             #     print("corresponding_market_information", corresponding_market_information)
 
             assert len(trade_position_record) == len(corresponding_market_information)
+            assert len(cash_accmulative_record) == len(trade_position_record)
 
             position_value_record = [
                 position * single_value
@@ -881,8 +883,8 @@ class Analyzer:
 if __name__ == "__main__":
     
     
-    positions = np.load("best_result/BTCT/micro_action.npy")
-    data = pd.read_feather("best_result/BTCT/test.feather")   
+    positions = np.load("best_result/BTCT/micro_action.npy")[:10000]
+    data = pd.read_feather("best_result/BTCT/test.feather")[:10001]   
     path = "best_result/BTCT/data"   
     isExist = os.path.exists(path)
     if not isExist:
@@ -912,13 +914,15 @@ if __name__ == "__main__":
 
     # time_analysis = analyzer.analysis_along_time(2)
 
-    # mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
-    #     analyzer.strategy
-    # )  
-
+    mean_return_rate, mean_duration, mean_mdd, win_rate = analyzer.analysis_behavior(
+        analyzer.strategy
+    )  
+    print("mean_return_rate", mean_return_rate)
+    print("mean_duration", mean_duration)
+    print("mean_mdd", mean_mdd)
     # print("flag 4")
 
-    opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
+    # opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg = analyzer.analysis_along_time_dynamics(path,num_dynamics,num_seg,selected_timestamp)
 
     # # print("mean_return_rate", mean_return_rate)
     # # print("mean_duration", mean_duration)

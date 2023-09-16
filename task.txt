@@ -1,0 +1,47 @@
+1. 把analyzer 从ipynb改到.py
+2. 输入改成用args 传参的形式 具体参考 /home/mlqin/qml/EarnHFT/HFT_06_17/RL/agent/high_level/dqn_position.py
+3. 划分是市场之后用analysis metric 分析 注意到 切分后一个dynamics有多段市场，这个时候我们需要计算一个对比 就是buy and hold（bid1 price）
+的结果（仓位一直是1，require money用一开始的时间片的bid1pirce* volume就行了）和我们结果的对比
+
+Self.strategy:  cal_metrics
+市场的状态： 新加的函数只拿bid1 price算
+
+算各dynamics的三个index的平均值
+
+导出csv 
+
+def analysis_result(self):
+        assets = bid1_price的list
+        df = pd.DataFrame()
+        df["total assets"] = assets
+        return self.evaualte(df)
+
+def get_daily_return_rate(self,price_list:list):
+        return_rate_list=[]
+        for i in range(len(price_list)-1):
+            return_rate=(price_list[i+1]/price_list[i])-1
+            return_rate_list.append(return_rate)
+        return return_rate_list
+
+def evaualte(self, df):
+    tr = df["total assets"].values[-1] / (df["total assets"].values[0]) - 1
+    return_rate_list=self.get_daily_return_rate(df["total assets"].values)
+
+    mdd = 0
+    peak=df["total assets"][0]
+    for value in df["total assets"]:
+        if value>peak:
+            peak=value
+        dd=(peak-value)/peak
+        if dd>mdd:
+            mdd=dd
+    cr = tr / (mdd + 1e-10)
+    return tr, mdd, cr
+
+4.修改开仓数量到rank图，只展示百分 只画一个量的 
+配色：深一点，对比度大一点
+
+5. 原图
+4.1. legend和图宽一样
+4.2. count, volume分开画 一行两个
+4.3. 改颜色：和rank的色系一致
