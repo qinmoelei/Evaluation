@@ -1,5 +1,6 @@
 1. 把analyzer 从ipynb改到.py
 2. 输入改成用args 传参的形式 具体参考 /home/mlqin/qml/EarnHFT/HFT_06_17/RL/agent/high_level/dqn_position.py
+
 3. 划分是市场之后用analysis metric 分析 注意到 切分后一个dynamics有多段市场，这个时候我们需要计算一个对比 就是buy and hold（bid1 price）
 的结果（仓位一直是1，require money用一开始的时间片的bid1pirce* volume就行了）和我们结果的对比
 
@@ -38,10 +39,19 @@ def evaualte(self, df):
     cr = tr / (mdd + 1e-10)
     return tr, mdd, cr
 
-4.修改开仓数量到rank图，只展示百分 只画一个量的 
-配色：深一点，对比度大一点
-
-5. 原图
+4. 原图
 4.1. legend和图宽一样
 4.2. count, volume分开画 一行两个
 4.3. 改颜色：和rank的色系一致
+
+5. 
+横轴
+Bid1_price /  ask1_price - 1
+转化成百分比
+一个label一个颜色
+
+市场的 - 展示趋势结果 - 五彩斑斓
+策略的 - total_value_xxx
+
+legend 加一列 our_strategy
+
