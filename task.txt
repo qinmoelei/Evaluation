@@ -46,7 +46,7 @@ def evaualte(self, df):
 
 5. 
 横轴
-Bid1_price /  ask1_price - 1
+Bid1_price /  ask1_price[0] - 1
 转化成百分比
 一个label一个颜色
 
