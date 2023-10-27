@@ -8,14 +8,58 @@ import matplotlib.patches as mpatches
 import csv
 import matplotlib.lines as mlines
 
-sys.path.append("..")
-# sys.path.append(".")
+# sys.path.append("..")
+sys.path.append(".")
 from tool import market_dynamics_modeling_analysis
 from tool import label_util as util
 from comprehensive_evaluation.analyzer import *
 from comprehensive_evaluation.util import *
 from comprehensive_evaluation.slice_model import *
 import bisect
+
+
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["F_ENABLE_ONEDNN_OPTS"] = "0"
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "--positions_loc", type=str, 
+    default="best_result/BTCT/micro_action.npy", 
+    help="the location of file micro_action.npy"
+)
+parser.add_argument(
+    "--data_loc", type=str, 
+    default="best_result/BTCT/test.feather", 
+    help="the location of data file"
+)
+parser.add_argument(
+    "--path", type=str, 
+    default="best_result/BTCT/data", 
+    help="the location to read, write, store data and outputs"
+)
+parser.add_argument(
+    "--max_holding_number1", type=float, 
+    default=0.01, 
+    help="max holding number"
+)
+parser.add_argument(
+    "--commission_fee", type=float, 
+    default=0, 
+    help="commission fee"
+)
+parser.add_argument(
+    "--num_seg", type=int, 
+    default=5, 
+    help="number of segmentation when analyze along time"
+)
+parser.add_argument(
+    "--num_dynamics", type=int, 
+    default=5, 
+    help="number of types of market when analyze along dynamics"
+)
 
 
 def find_previous_element(sorted_list, value):
@@ -885,20 +929,30 @@ class Analyzer:
           
 
 if __name__ == "__main__":
-  positions = np.load("../best_result/BTCT/micro_action.npy")
-  data = pd.read_feather("../best_result/BTCT/test.feather")
-  path = "../best_result/BTCT/data"
+  
+  args = parser.parse_args()
+  
+  positions = np.load(args.positions_loc)
+  data = pd.read_feather(args.data_loc)
+  path = args.path  
+  
+  # positions = np.load("../best_result/BTCT/micro_action.npy")
+  # data = pd.read_feather("../best_result/BTCT/test.feather")
+  # path = "../best_result/BTCT/data"
 
   isExist = os.path.exists(path)
   if not isExist:
       os.makedirs(path)
       print("The new directory is created! {}".format(path))
 
-  max_holding_number1 = 0.01
-  commission_fee = 0
-
-  num_seg = 5
-  num_dynamics = 5  
+  max_holding_number1 = args.max_holding_number1
+  commission_fee = args.commission_fee
+  num_seg = args.num_seg
+  num_dynamics = args. num_dynamics
+  # max_holding_number1 = 0.01
+  # commission_fee = 0
+  # num_seg = 5
+  # num_dynamics = 5  
   
   selected_timestamp = [
       pd.Timestamp(data[0:1]["timestamp"].values[0]),
