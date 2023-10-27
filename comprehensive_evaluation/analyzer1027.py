@@ -385,8 +385,8 @@ class Analyzer:
                             strat_before = self.strategy[i-1]
                             pos_before = strat_before["position"]
                         flag = 1
+                        pos_end = pos_before
                 else:
-                    pos_end = pos_before
                     if strat['timestamp'] > selected_timestamp[1]:
                         strat_after = self.strategy[i-1]
                         pos_end = strat_after["position"]
@@ -396,8 +396,10 @@ class Analyzer:
                         elif strat_after['action'] == 'sell':
                             for order in strat_after['order']:
                                 pos_end += order['amount']
-                    break 
-            assert ( abs(pos_before - pos_end) < 1e-5  )
+                        break
+                    continue 
+            if flag == 1:
+                assert ( abs(pos_before - pos_end) < 1e-5  )
             if pos_before <  1e-5 :
                 return 0,0,0
             else:
@@ -816,7 +818,7 @@ class Analyzer:
 
       legend_label_count = ["Counts", "Bull", "Rally", "Sideways", "Pullback", "Bear"]
       legend_label_count.reverse()
-      graph_names_count = ["Opening Amount", "Closing Amount"]
+      graph_names_count = ["Opening Count", "Closing Count"]
       opening_close_count = [opening_count, closing_count]
       opening_close_count_perc = [opening_count_perc, closing_count_perc]  
       
@@ -925,8 +927,110 @@ class Analyzer:
           ax2.set_yticks(np.linspace(ax2.get_yticks()[0], ax2.get_yticks()[-1], len(ax.get_yticks())))
 
       img_path = path + "/phase_dynamic_amount_proportion.pdf"
-      plt.savefig1(img_path, bbox_inches="tight")
-          
+      plt.savefig(img_path, bbox_inches="tight")
+    
+    def draw_PnL(self, selected_timestamp):
+        def calculate_PnL(selected_timestamp):
+            selected_timestamp.sort()
+            assert len(selected_timestamp) == 2
+            selected_market = self.market_information[
+                (self.market_information["timestamp"] >= selected_timestamp[0])
+                & (self.market_information["timestamp"] <= selected_timestamp[1])
+            ]
+            selected_strategy = [
+                item
+                for item in self.strategy
+                if selected_timestamp[0] <= item["timestamp"] <= selected_timestamp[1]
+            ]
+            if selected_strategy is None:
+                return [1]*selected_timestamp
+            if selected_strategy[0]["action"] == 'sell':
+                previous_position=selected_strategy[0]["position"]+sum([order['amount'] for order in selected_strategy[0]["order"]])
+            else:
+                previous_position=selected_strategy[0]["position"]-sum([order['amount'] for order in selected_strategy[0]["order"]])
+            j=0
+            current_cash=previous_position*(-selected_market.iloc[0]["bid1_price"])
+            current_position=previous_position
+            position_list=[]
+            position_value_list=[]
+            cash_list=[]
+            for i in range(len(selected_market)):
+                if j<len(selected_strategy):
+                    if selected_market.iloc[i]["timestamp"] == selected_strategy[j]["timestamp"]:
+                        current_position=selected_strategy[j]["position"]
+                        if selected_strategy[j]["action"]=="sell":
+                            current_cash=current_cash+sum([order['amount']*order['price'] for order in selected_strategy[j]["order"]])
+                        else:
+                            current_cash=current_cash-sum([order['amount']*order['price'] for order in selected_strategy[j]["order"]])
+                        j=j+1
+                        position_value=current_position*selected_market.iloc[i]["bid1_price"]
+                    else:
+                        current_position=current_position
+                        current_cash=current_cash
+                        position_value=current_position*selected_market.iloc[i]["bid1_price"]
+                else:
+                    current_position=current_position
+                    current_cash=current_cash
+                    position_value=current_position*selected_market.iloc[i]["bid1_price"]
+                position_list.append(current_position)
+                cash_list.append(current_cash)
+                position_value_list.append(position_value)
+            require_money=-min(cash_list)
+            total_value=[require_money+cash+position_value for cash,position_value in zip(cash_list,position_value_list)]
+            return total_value
+                    
+        total_value=calculate_PnL([self.market_information["timestamp"].tolist()[0],self.market_information["timestamp"].tolist()[-1]])
+        strat_spread = [(x/total_value[0]-1)*100 for x in total_value]
+
+        selected_market = self.df_label
+        labels = selected_market['label'].values
+        timeframes = []
+        index = 1
+        startIndex = 0
+        while index < len(labels):
+            if labels[index] == labels[index-1]:
+                pass
+            else:
+                timeframes.append([startIndex,index-1])
+                startIndex = index
+            index += 1
+        timeframes.append([startIndex,index-1])
+
+        spread = (selected_market['ask1_price']/selected_market['bid1_price'].values[0] -1)*100
+
+        x = selected_market['timestamp']
+
+        fig, ax = plt.subplots(figsize=(24, 12))
+
+        color_list = ['#EF8383', '#9CD4D8']
+        legend_label = ['Market','Strategy']
+        patches = [
+            mpatches.Patch(color=color_list[i], label="{:s}".format(legend_label[i]))
+            for i in range(len(color_list))
+        ]
+        legend = fig.legend(
+            handles=patches,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.97),
+            ncol=6,
+            fontsize=25,
+        
+        )
+
+        ax.plot(x,spread,label='market',color = color_list[0],linewidth = 3)
+        ax.plot(x,strat_spread,label='strategy',color = color_list[1],linewidth = 3)
+        # ax.set_title("Return rate for market and strategy",fontsize = 40)
+        ax.set_xlabel('Date', fontsize=30)
+        ax.set_ylabel('Return Rate (%)', fontsize=30)
+        ax.tick_params(axis='x', labelsize=20)  
+        ax.tick_params(axis='y', labelsize=20)  
+
+        plt.subplots_adjust(hspace=0.3)
+        plt.tight_layout(pad=1.5,rect=[0, 0, 1, 0.91])
+
+        img_path = path + "/return_rate_market&strat.pdf"
+        plt.savefig(img_path, bbox_inches="tight")
+
 
 if __name__ == "__main__":
   
@@ -999,4 +1103,8 @@ if __name__ == "__main__":
   ) = analyzer.analysis_along_time_dynamics(path, num_dynamics, num_seg, selected_timestamp)
 
 analyzer.draw_stacking_graph(opening_count_seg,closing_count_seg,opening_amount_seg,closing_amount_seg)
-  
+
+print("flag5")
+
+# output4. draw pnl
+analyzer.draw_PnL(selected_timestamp)
